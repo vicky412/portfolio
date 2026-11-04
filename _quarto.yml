@@ -10,6 +10,8 @@ website:
         text: Home
       - href: projects/RHC.qmd
         text: RHC Analysis
+      - href: project/sepsis.ipynb
+        text: Sepsis Early Prediction
     right:
       - icon: github
         href: https://github.com/vicky412
