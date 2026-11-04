@@ -1,0 +1,20 @@
+---
+title: "Vicky Y. Deng — Portfolio"
+subtitle: "Causal Inference · Machine Learning · Health Data Analytics"
+---
+
+## About
+
+My research interest is applying machine learning and causal inference to real-world data (EHRs, Registry-based data, prospective cohorts), to address clinical questions in psychiatric treatment:
+
+- Comparing the effectiveness and safety of medications
+
+- Identifying treatment effect heterogeneity to develop individualised treatment rules
+
+- Predicting the risk of adverse outcomes (suicide, relapse, cardiovascular disease) in people with psychosis
+
+This portfolio showcases reproducible analyses of real-world data using R and Python. Each project combines a research question with transparent methodology, analytical pipeline, and interpretation of findings.
+
+## Selected Projects
+
+### [Comparative Effectiveness of Right Heart Catheterization (RHC) in Critically Ill Patients](project/RHC.qmd)

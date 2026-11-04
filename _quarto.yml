@@ -1,0 +1,27 @@
+project:
+  type: website
+  output-dir: docs
+  
+website:
+  title: "Vicky Y. Deng — Portfolio"
+  navbar:
+    left:
+      - href: index.qmd
+        text: Home
+      - href: projects/RHC.qmd
+        text: RHC Analysis
+    right:
+      - icon: github
+        href: https://github.com/vicky412
+
+  page-footer:
+    center: "Built with Quarto"
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    code-fold: true
+    code-tools: true
+
+

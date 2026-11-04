@@ -1,0 +1,285 @@
+---
+title: "Comparative Effectiveness of Right Heart Catheterization (RHC) in Critically Ill Patients"
+execute:
+  cache: true
+  
+author:
+  - name: "Vicky Y. Deng"
+    
+date: "2026-10-04"
+date-format: "MMMM D, YYYY"
+
+keywords:
+  - Causal Inference
+  - Propensity Score
+  - Right Heart Catheterization
+  - Cohort Study
+
+format:
+  html:
+    theme: cosmo
+    toc: true
+    toc-depth: 2
+    number-sections: true
+    code-fold: true
+    code-tools: true
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = TRUE)
+```
+
+## Setup & Loading data
+
+```{r}
+# Loading packages
+library(haven)
+library(dplyr)
+library(ggplot2)
+library(cobalt)
+library(MatchIt)
+library(boot)
+library(knitr)
+library(broom)
+library(gt)
+library(micsr)
+```
+
+```{r}
+rhc <- read_dta("~/Desktop/Desktop - MacBook Air (258)/causal/Coursework Assignment Details-20260518/RHC.dta")
+```
+
+## Introduction
+
+The research question is among critically ill patients who received right heart catheterization, what is the average causal effect of RHC on survival compared with not receiving RHC? Five estimators of the average treatment effect on the treated (ATT) were compared: propensity score adjustment, nearest-neighbour matching with and without replacement, inverse probability of treatment weighting (IPTW), and augmented inverse probability weighting (AIPW).
+
+## Method
+
+### Data source
+
+Data were obtained from a prospective observational cohort study conducted across five hospitals in the United States between 1989 and 1994 (Connors et al., 1996). The study included 5,735 critically ill patients, of whom 2,184 received RHC within the first 24 hours of ICU care and 3,551 did not.
+
+```{r}
+summary(rhc)
+```
+
+### Exposure, confounders and outcome
+
+The exposure was RHC within the first 24 hours of ICU care, coded as a binary variable (1 = RHC; 0 = no RHC). Eleven baseline confounders were considered: age, sex, acute physiology score (APS), mean blood pressure, acute respiratory failure, congestive heart failure, chronic obstructive pulmonary disease, cirrhosis, coma, multiple organ system failure, and sepsis. The outcome was binary survival status (1 = survival, 0 = death).
+
+### Causal Estimand
+
+The target estimand was the average treatment effect on the treated (ATT), defined as the difference in survival probability under RHC versus no RHC among patients who received RHC:
+
+ATT = E\[Y(1)-Y(0) \| A=1\]
+
+where Y(1) and Y(0) denote potential outcomes with and without RHC, respectively, and A=1 indicates patients who actually received RHC.
+
+### Statistical Analysis
+
+Propensity scores were estimated using logistic regression with eleven baseline covariates. Patients outside common support were excluded. Five ATT estimators were compared: propensity score adjustment, nearest-neighbour matching with and without replacement, IPTW, and AIPW. Covariate balance was assessed using standardised mean differences (\|SMD\| \< 0.1). Treatment effects were expressed as survival risk differences, with 95% percentile confidence intervals estimated from 1,000 bootstrap replications.
+
+## Results
+
+### Baseline Characteristics
+
+Patients receiving RHC had higher Acute Physiology Score (APS) scores (d = 0.484) and lower mean blood pressure (d = -0.487) at baseline, indicating worse physiological condition. RHC recipients were more likely to have sepsis (d = 0.369) and less likely to have chronic obstructive pulmonary disease (COPD; d = -0.534), liver cirrhosis (CIRR; d = -0.181) or coma (d = -0.258). These covariates were unbalanced between patients receiving and not receiving RHC. Age, gender, acute rheumatic fever (ARF), chronic heart failure (CHF), and multiple organ system failure (MOSF) were balanced between groups (\|d\|\< 0.1).
+
+```{r}
+covariates <- c(
+  "age", "female", "meanbp1", "aps1", "ARF", "CHF", "COPD", "CIRR", "coma", "MOSF", "sepsis"
+)
+
+rhc$survived <- 1 - rhc$died
+
+ps_formula <- reformulate(covariates, response = "treatment")
+
+bal.tab(
+  ps_formula,
+  data = rhc,
+  estimand = "ATT",
+  binary = "std",
+  s.d.denom = "treated"
+)
+
+```
+
+### Propensity Score Estimation and Common Support
+
+The region of common support is 0.0595 - 0.8521. Out of 5735 observations, 12 were excluded from the common support. These patients had propensity score higher than 0.8521 or less than 0.0595. Excluding them ensures that causal comparisons are made only within the region where both treated and control units are observed, avoiding extrapolation.
+
+```{r}
+# Estimate propensity scores using logistic regression
+ps_model <- glm(ps_formula, data = rhc, family = binomial(link = "logit"))
+rhc$pscore <- predict(ps_model, type = "response")
+summary(rhc$pscore)
+```
+
+```{r}
+# Identify overlapping propensity score ranges
+ps1 <- rhc$pscore[rhc$treatment == 1]
+ps0 <- rhc$pscore[rhc$treatment == 0]
+
+lower <- max(min(ps1), min(ps0))
+upper <- min(max(ps1), max(ps0))
+
+rhc <- rhc |>
+  mutate(
+    comsup = pscore >= lower & pscore <= upper
+  )
+
+# Summarise common support
+summary(rhc$pscore[rhc$comsup])
+
+# Number of included and excluded patients
+table(rhc$comsup)
+
+ggplot(
+  rhc,
+  aes(x = pscore,fill = factor(treatment))) +
+  geom_histogram(bins = 20, alpha = 0.5, position = "identity") +
+  facet_wrap(~ comsup, labeller = label_both) +
+  labs(
+    x = "Propensity score",
+    y = "Number of patients",
+    fill = "RHC"
+  ) +
+  theme_minimal()
+
+# Keep observations within common support
+supported <- rhc |>
+  filter(comsup == TRUE)
+```
+
+### ATT Estimates
+
+ATT weighting, used in both IPTW and AIPW, achieved good covariate balance across all eleven covariates (\|SMD\| \< 0.1). Nearest-neighbour matching with replacement also achieved adequate balance, whereas matching without replacement left four covariates imbalanced (mean blood pressure, APS, ARF, and sepsis). Four estimators suggested a modest reduction in survival associated with RHC (ATT: −0.0235 to −0.0307), with bootstrap confidence intervals excluding zero for propensity score adjustment, matching without replacement, and AIPW. However, matching with replacement yielded an ATT close to zero (−0.0046, 95% CI: −0.0485 to 0.0234). Overall, the results suggest a possible adverse effect of RHC on survival, although the magnitude and statistical significance varied across methods, and residual confounding cannot be excluded.
+
+```{r}
+# Five ATT estimators
+att <- function(d, save_matches = FALSE) {
+  a <- d$treatment
+  y <- d$survived
+  w <- d$pscore / (1 - d$pscore)
+  d1 <- subset(d, treatment == 1)
+  d0 <- subset(d, treatment == 0)
+
+  # 1. Adjustment for propensity scores
+  fit1 <- glm(survived ~ pscore, data = d1, family = binomial())
+  fit0 <- glm(survived ~ pscore, data = d0, family = binomial())
+  adj_ps <- mean(predict(fit1, d1, type = "response") - predict(fit0, d1, type = "response")
+  )
+
+  # 2 & 3. Nearest-neighbour matching
+  match_att <- function(replace) {
+    m <- matchit(
+      treatment ~ age + female + meanbp1 + aps1 + ARF + CHF + COPD + CIRR + coma + MOSF + sepsis,
+      data = d,
+      method = "nearest",
+      distance = d$pscore,
+      replace = replace,
+      estimand = "ATT"
+    )
+    x <- match_data(m, data = d)
+    list(
+      ATT = with(x,
+        weighted.mean(survived[treatment == 1], weights[treatment == 1]) -
+        weighted.mean(survived[treatment == 0], weights[treatment == 0])
+      ),
+      model = m
+    )
+  }
+  m_no <- match_att(FALSE)
+  m_yes <- match_att(TRUE)
+
+  # 4. IPTW
+  iptw <- mean(y[a == 1]) - weighted.mean(y[a == 0], w[a == 0])
+
+  # 5. AIPW
+  outcome <- glm(
+    survived ~ age + female + meanbp1 + aps1 + ARF + CHF + COPD + CIRR + coma + MOSF + sepsis,
+    data = d0,
+    family = binomial()
+  )
+  mu0 <- predict(outcome, d, type = "response")
+  aipw <- mean(y[a == 1] - mu0[a == 1]) - sum(w[a == 0] * (y[a == 0] - mu0[a == 0])) / sum(a)
+
+  estimates <- c(
+    PS_Adjustment = adj_ps,
+    Matching_no_replacement = m_no$ATT,
+    Matching_with_replacement = m_yes$ATT,
+    IPTW = iptw,
+    AIPW = aipw
+  )
+
+  if (save_matches) {
+    return(list(
+      estimates = estimates,
+      m_no = m_no$model,
+      m_yes = m_yes$model
+    ))
+  }
+  estimates
+}
+
+set.seed(123)
+b <- boot(
+  supported,
+  statistic = function(data, i)
+    att(data[i, , drop = FALSE]),
+  R = 1000,
+  strata = supported$treatment
+)
+
+results <- data.frame(
+  Method = gsub("_", " ", names(b$t0)),
+  ATT = as.numeric(b$t0),
+  Lower = apply(b$t, 2, quantile, 0.025),
+  Upper = apply(b$t, 2, quantile, 0.975)
+)
+
+results |>
+  gt() |>
+  fmt_number(columns = -Method, decimals = 4) |>
+  cols_label(
+    Lower = "95% CI Lower",
+    Upper = "95% CI Upper"
+  ) |>
+  opt_row_striping()
+```
+
+```{r}
+models <- att(supported, save_matches = TRUE)
+# Matching without replacement
+bal.tab(models$m_no, un = TRUE, binary = "std", thresholds = c(m = 0.1))
+# Matching with replacement
+bal.tab(models$m_yes, un = TRUE, binary = "std", thresholds = c(m = 0.1))
+
+love.plot(models$m_no, abs = TRUE, binary = "std", thresholds = c(m = 0.1))
+love.plot(models$m_yes, abs = TRUE, binary = "std", thresholds = c(m = 0.1))
+```
+
+```{r}
+w_att <- ifelse(supported$treatment == 1, 1, supported$pscore / (1 - supported$pscore))
+
+# Weighted covariate balance
+bal_iptw <- bal.tab(
+  treatment ~ age + female + meanbp1 + aps1 + ARF + CHF + COPD + CIRR + coma + MOSF + sepsis,
+  data = supported,
+  weights = w_att,
+  estimand = "ATT",
+  un = TRUE,
+  binary = "std",
+  thresholds = c(m = 0.1)
+)
+
+bal_iptw
+```
+
+## Data Availability
+
+The dataset is publicly available from the https://hbiostat.org/data/repo/rhc.csv.
+
+## Reference
+
+Connors, A.F. Jr., Speroff, T., Dawson, N.V. et al. (1996) ‘The effectiveness of right heart catheterization in the initial care of critically ill patients’, JAMA, 276(11), pp. 889–897.
